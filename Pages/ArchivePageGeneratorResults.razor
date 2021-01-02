@@ -1,0 +1,202 @@
+﻿@page "/ArchivePageGeneratorResults"
+@inject NavigationManager navManager2
+@using HeyRed.MarkdownSharp
+@using HtmlAgilityPack
+@using System.IO
+
+@if (allPosts == null)
+{
+    <SpinKitChasingDots />
+}
+else
+{
+    if (allPosts.Count == 0)
+    {
+        <div class="alert alert-warning" role="alert">
+            <p>
+                Could not generate Archive page contents for https://@instance/<span class="font-weight-bold">@alias</span>
+            </p>
+        </div>
+    }
+    else
+    {
+        string domainName = "https://" + instance + "/" + alias;
+        if (!domainName.EndsWith('/'))
+        {
+            domainName += "/";
+        }
+
+        <h2 class="mb-4 text-primary text-center text-dark">Archive Page Contents for<br /><a href="@domainName">@domainName</a></h2>
+        
+        System.Text.StringBuilder stringBuilder = new System.Text.StringBuilder();
+        string currentYear = string.Empty;
+        stringBuilder.AppendLine("<div class=\"archivePage\">");
+        @foreach (var post in allPosts)
+        {
+            if (string.IsNullOrEmpty(currentYear) || post.CreateDate.Year.ToString() != currentYear)
+            {
+                currentYear = post.CreateDate.Year.ToString();
+                stringBuilder.AppendLine("<h1>" + currentYear + "</h1>");
+                stringBuilder.AppendLine("<hr class=\"archivePageHr\"/>");
+            }
+
+            string createDate = post.CreateDate.ToString("yyyy-MM-dd");
+            string postTitle = GetPostTitle(post);
+            string postUrl = domainName + post.Slug;
+            stringBuilder.AppendLine(string.Format("<div><a href=\"{0}\" target=\"_blank\"><span class=\"archivePageDateSpan\">{1}:</span> {2}</a></div>", postUrl, createDate, postTitle));
+        }
+        stringBuilder.AppendLine("</div>");
+        <textarea class="form-control mb-4" style="font-family: monospace;" rows="20">@stringBuilder.ToString()</textarea>
+
+        <div class="alert alert-success" role="alert">
+            <p>Copy the contents of the textbox above and paste it into a <em>write freely</em> page and hit Publish.</p>
+            <p><em>If you wanted to customize the look of the contents, you can create custom CSS for the following classes:</em></p>
+            <ul>
+                <li><em>archivePage</em></li>
+                <li><em>archivePageHr</em></li>
+                <li><em>archivePageDateSpan</em></li>
+            </ul>
+        </div>
+    }
+
+    <div class="mt-4 mb-4 text-center">
+        <button class="btn btn-primary btn-lg" @onclick="NavigateBackToArchivePageGenerator">Back to Archive Page Generator</button>
+    </div>
+}
+
+@code {
+    string instance { get; set; }
+    string alias { get; set; }
+    string errorMessage { get; set; }
+    List<WriteAs.NET.Client.Models.Post> allPosts = null;
+
+    protected override async Task OnInitializedAsync()
+    {
+        errorMessage = null;
+
+        var uri = navManager2.ToAbsoluteUri(navManager2.Uri);
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("instance", out var instanceParam))
+        {
+            instance = instanceParam.First();
+        }
+        if (QueryHelpers.ParseQuery(uri.Query).TryGetValue("alias", out var aliasParam))
+        {
+            alias = aliasParam.First();
+        }
+
+        if (!string.IsNullOrEmpty(instance) && !string.IsNullOrEmpty(alias))
+        {
+            try
+            {
+                string writeAsClientApiUri = @"https://" + instance + "/";
+                using (var client = new WriteAs.NET.WriteAsClient(writeAsClientApiUri))
+                {
+                    allPosts = await client.GetAllPosts(alias, WriteAs.NET.Shared.SortOrder.Descending);
+                }
+            }
+            catch (Exception)
+            {
+                allPosts = new List<WriteAs.NET.Client.Models.Post>();
+            }
+        }
+    }
+
+    private void NavigateBackToArchivePageGenerator()
+    {
+        navManager2.NavigateTo("/");
+    }
+
+    private string GetPostTitle(WriteAs.NET.Client.Models.Post post)
+    {
+        string postTitle = string.Empty;
+        if (string.IsNullOrEmpty(post.Title))
+        {
+            postTitle = "Untitled Post";
+            string postContent = new Markdown().Transform(post.Body);
+            HtmlDocument doc = new HtmlDocument();
+            doc.LoadHtml(postContent);
+
+            using (StringWriter sw = new StringWriter())
+            {
+                ConvertTo(doc.DocumentNode, sw);
+                sw.Flush();
+                string plainText = sw.ToString();
+                if (!string.IsNullOrEmpty(plainText))
+                {
+                    plainText = plainText.Replace("\r", "");
+                    plainText = plainText.Replace("\n", "");
+                    int length = plainText.Length < 100 ? plainText.Length : 100;
+                    postTitle = plainText.Substring(0, length) + "...";
+                }
+            }
+        }
+        else
+        {
+            postTitle = post.Title;
+        }
+
+        postTitle = postTitle.Replace("#", "&#35;"); // this is to avoid triggering write.as' hashtag system
+        return postTitle;
+    }
+
+    private static void ConvertTo(HtmlNode node, TextWriter outText)
+    {
+        string html;
+        switch (node.NodeType)
+        {
+            case HtmlNodeType.Comment:
+                // don't output comments
+                break;
+
+            case HtmlNodeType.Document:
+                ConvertContentTo(node, outText);
+                break;
+
+            case HtmlNodeType.Text:
+                // script and style must not be output
+                string parentName = node.ParentNode.Name;
+                if ((parentName == "script") || (parentName == "style"))
+                    break;
+
+                // get text
+                html = ((HtmlTextNode)node).Text;
+
+                // is it in fact a special closing node output as text?
+                if (HtmlNode.IsOverlappedClosingElement(html))
+                    break;
+
+                // check the text is meaningful and not a bunch of whitespaces
+                if (html.Trim().Length > 0)
+                {
+                    outText.Write(HtmlEntity.DeEntitize(html));
+                }
+                break;
+
+            case HtmlNodeType.Element:
+                switch (node.Name)
+                {
+                    case "p":
+                        // treat paragraphs as crlf
+                        outText.Write("\r\n");
+                        break;
+                    case "br":
+                        outText.Write("\r\n");
+                        break;
+                }
+
+                if (node.HasChildNodes)
+                {
+                    ConvertContentTo(node, outText);
+                }
+                break;
+        }
+    }
+
+    private static void ConvertContentTo(HtmlNode node, TextWriter outText)
+    {
+        foreach (HtmlNode subnode in node.ChildNodes)
+        {
+            ConvertTo(subnode, outText);
+        }
+    }
+}

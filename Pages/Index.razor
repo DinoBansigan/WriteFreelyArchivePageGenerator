@@ -1,0 +1,63 @@
+﻿@page "/"
+@inject NavigationManager navManager
+
+<div class="text-center">
+    <h2>WriteFreely Archive Page Generator</h2>
+    <p>
+        This is a simple app that will generate the HTML contents needed to populate a static <a href="https://writefreely.org/">Write Freely</a>
+        instance Archive page. All you have to do, is enter your <em>Write Freely</em> instance name and alias, then click the Generate button below.
+    </p>
+
+    <div class="input-group mb-3">
+        <div class="input-group-prepend">
+            <span class="input-group-text" id="basic-addon1">https://</span>
+        </div>
+        <input type="text" class="form-control" placeholder="Instance Name" aria-label="Instance Name" aria-describedby="basic-addon1" @bind-value="@instance" @onkeyup="@HandleEnterKey" />
+        <div class="input-group-append">
+            <span class="input-group-text" id="basic-addon2">/</span>
+        </div>
+        <input type="text" class="form-control" placeholder="Alias" aria-label="Alias" aria-describedby="basic-addon1" @bind-value="@alias" @onkeyup="@HandleEnterKey" />
+    </div>
+    <div class="p-3">
+        <button type="button" class="btn btn-primary" @onclick="HandleGenerate">Generate</button>
+    </div>
+
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger mt-3" role="alert">
+            @errorMessage
+        </div>
+    }
+</div>
+
+@code {
+    string instance;
+    string alias;
+    string errorMessage;
+
+    private void HandleGenerate()
+    {
+        if (string.IsNullOrEmpty(instance))
+        {
+            errorMessage = "Please enter a write freely instance name before clicking the Generate button...";
+        }
+        else if (string.IsNullOrEmpty(alias))
+        {
+            errorMessage = "Please enter a write freely alias before clicking the Generate button...";
+        }
+        else
+        {
+            var query = new Dictionary<string, string> { { "instance", instance }, { "alias", alias } };
+            navManager.NavigateTo(QueryHelpers.AddQueryString(navManager.BaseUri + "ArchivePageGeneratorResults", query));
+        }
+    }
+
+    private void HandleEnterKey(KeyboardEventArgs e)
+    {
+        if (e.Code == "Enter" || e.Code == "NumpadEnter")
+        {
+            HandleGenerate();
+        }
+    }
+
+}
